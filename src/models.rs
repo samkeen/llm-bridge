@@ -15,8 +15,15 @@ pub struct RequestBody {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct ContentBlock {
+    pub text: String,
+    #[serde(rename = "type")]
+    pub block_type: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ResponseMessage {
     pub id: String,
     pub role: String,
-    pub content: String,
+    pub content: Vec<ContentBlock>,
 }

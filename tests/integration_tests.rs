@@ -1,6 +1,6 @@
 use dotenv::dotenv;
 use llm_api_adapter::client::AnthropicClient;
-use llm_api_adapter::models::Message;
+use llm_api_adapter::models::{Message};
 
 
 #[tokio::test]
@@ -26,4 +26,6 @@ async fn test_send_message_integration() {
     // Assert the response
     assert_eq!(response.role, "assistant");
     assert!(!response.content.is_empty());
+    assert_eq!(response.content[0].block_type, "text");
+    assert!(!response.content[0].text.is_empty());
 }

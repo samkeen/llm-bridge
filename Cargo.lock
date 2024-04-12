@@ -395,6 +395,7 @@ dependencies = [
  "dotenv",
  "reqwest",
  "serde",
+ "serde_json",
  "thiserror",
  "tokio",
 ]
