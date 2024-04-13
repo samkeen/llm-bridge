@@ -1,6 +1,7 @@
 # LLM API Adapter SDK for Rust
 
-This is a Rust SDK for interacting with various Language Model APIs, starting with the Anthropic API. It allows you to
+This is a Rust SDK for interacting with various Large Language Model (LLM) APIs, starting with the Anthropic API. It
+allows you to
 send messages and engage in conversations with language models.
 
 ## Features
