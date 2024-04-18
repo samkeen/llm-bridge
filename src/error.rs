@@ -1,10 +1,16 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum AnthropicError {
+pub enum ApiError {
     #[error("Request error: {0}")]
     RequestError(#[from] reqwest::Error),
-    #[error("JSON Error {0}")] // Add this variant
-    JsonError(#[from] serde_json::Error),
-    // Add more error variants as needed
+
+    #[error("Client error returned from API: {0}")]
+    ClientError(String),
+
+    #[error("Server error returned from API: {0}")]
+    ServerError(String),
+
+    #[error("Response parse error: {0}")]
+    ResponseParseError(#[from] serde_json::Error),
 }

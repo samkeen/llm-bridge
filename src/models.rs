@@ -1,6 +1,8 @@
+use fmt::Display;
+use std::fmt;
 use serde::{Deserialize, Serialize};
 use crate::client::ChatSession;
-use crate::error::AnthropicError;
+use crate::error::ApiError;
 
 /// Represents a message in the conversation.
 ///
@@ -59,6 +61,13 @@ pub struct ResponseMessage {
     pub content: Vec<ContentBlock>,
 }
 
+/// Implement Display trait for ResponseMessage
+impl Display for ResponseMessage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ResponseMessage {{ id: {}, role: {}, content: {:?} }}", self.id, self.role, self.content)
+    }
+}
+
 /// Represents the response from a chat session.
 ///
 /// The lifetime parameter `'a` indicates that the `ChatResponse` borrows data from a `ChatSession`
@@ -88,7 +97,7 @@ impl<'a> ChatResponse<'a> {
     /// # Returns
     ///
     /// An updated `ChatResponse` instance containing the last response and the updated chat session.
-    pub async fn add(self, message: &str) -> Result<ChatResponse<'a>, AnthropicError> {
+    pub async fn add(self, message: &str) -> Result<ChatResponse<'a>, ApiError> {
         self.session.send(message).await
     }
 }

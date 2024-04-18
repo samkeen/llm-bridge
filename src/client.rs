@@ -1,4 +1,5 @@
-use crate::error::AnthropicError;
+use log::{debug, error};
+use crate::error::ApiError;
 use crate::models::{ChatResponse, Message, RequestBody, ResponseMessage};
 use reqwest::Client;
 
@@ -36,7 +37,7 @@ impl AnthropicClient {
         messages: Vec<Message>,
         max_tokens: u32,
         temperature: f32,
-    ) -> Result<ResponseMessage, AnthropicError> {
+    ) -> Result<ResponseMessage, ApiError> {
         let body = RequestBody {
             model: model.to_string(),
             messages,
@@ -53,10 +54,21 @@ impl AnthropicClient {
             .json(&body)
             .send()
             .await?;
-
-        let json_text = response.text().await?;
-        println!("JSON Response:\n{}", json_text);
-        let response_message = serde_json::from_str(&json_text)?;
+        let resp_status = response.status();
+        let resp_text = response.text().await.unwrap_or("".into());
+        if resp_status.is_client_error() {
+            // Handle 4xx error responses
+            error!("Client error [{}]: {}", resp_status, resp_text);
+            return Err(ApiError::ClientError(
+                format!("Status: {} - Error: {}", resp_status, resp_text)));
+        } else if resp_status.is_server_error() {
+            // Handle 5xx error responses
+            error!("Server error [{}]: {}", resp_status, resp_text);
+            return Err(ApiError::ServerError(
+                format!("Status: {} - Error: {}", resp_status, resp_text)));
+        }
+        debug!("LLM call response: status[{}]\n{}", resp_status, resp_text);
+        let response_message = serde_json::from_str(&resp_text)?;
 
         Ok(response_message)
     }
@@ -105,7 +117,7 @@ impl<'a> ChatSession<'a> {
     /// # Returns
     ///
     /// A `ChatResponse` instance containing the last response and the updated chat session.
-    pub async fn send(mut self, message: &str) -> Result<ChatResponse<'a>, AnthropicError> {
+    pub async fn send(mut self, message: &str) -> Result<ChatResponse<'a>, ApiError> {
         self.messages.push(Message {
             role: "user".to_string(),
             content: message.to_string(),
