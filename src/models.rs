@@ -30,6 +30,10 @@ pub struct RequestBody {
     pub max_tokens: u32,
     /// The temperature value to control the randomness of the generated response.
     pub temperature: f32,
+    /// A system prompt is a way of providing context and instructions to Claude, such as 
+    /// specifying a particular goal or role. 
+    /// https://docs.anthropic.com/claude/docs/system-prompts
+    pub system: String,
 }
 
 /// Represents a block of content in the API response.

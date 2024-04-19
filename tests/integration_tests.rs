@@ -17,7 +17,13 @@ async fn test_send_message() {
     }];
 
     let response = client
-        .send_message("claude-3-haiku-20240307", messages, 100, 1.0)
+        .request()
+        .model("claude-3-haiku-20240307")
+        .messages(messages)
+        .max_tokens(100)
+        .temperature(1.0)
+        .system_prompt("You are a haiku assistant.") // optional
+        .send()
         .await
         .expect("Failed to send message");
     print!("Response: {}", response.first_message());
@@ -36,7 +42,7 @@ async fn test_chat() {
     let client = AnthropicClient::new(api_key.to_string());
 
     let conversation = client
-        .chat("claude-3-haiku-20240307", 100, 1.0)
+        .chat("claude-3-haiku-20240307", 100, 1.0, None)
         .send("Hello, Claude!")
         .await
         .expect("Failed to send message");
@@ -65,7 +71,9 @@ async fn test_invalid_api_key() {
     }];
 
     let response = client
-        .send_message("claude-3-haiku-20240307", messages, 100, 1.0)
+        .request()
+        .messages(messages)
+        .send()
         .await;
 
     assert!(matches!(response, Err(ApiError::ClientError(_))));

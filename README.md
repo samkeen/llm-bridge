@@ -22,7 +22,7 @@ Add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-llm-api-adapter = "0.1.0"
+llm-api-adapter = "x.x.x"
 ```
 
 ## Usage
@@ -49,7 +49,17 @@ async fn main() {
     }];
 
     let response = client
-        .send_message("claude-3-haiku-20240307", messages, 100, 1.0)
+        .request()
+        .messages(messages)
+        // optional, defaults to DEFAULT_MODEL (client.rs)
+        .model("claude-3-haiku-20240307")
+        // optional, defaults to DEFAULT_MAX_TOKENS (client.rs)
+        .max_tokens(100)
+        // optional, defaults to DEFAULT_TEMP (client.rs)
+        .temperature(1.0)
+        // optional, system prompt is not used if not provided
+        .system_prompt("You are a haiku assistant.") // optional
+        .send()
         .await
         .expect("Failed to send message");
 
@@ -71,7 +81,7 @@ async fn main() {
     let client = AnthropicClient::new(api_key.to_string());
 
     let conversation = client
-        .chat("claude-3-haiku-20240307", 100, 1.0)
+        .chat("claude-3-haiku-20240307", 100, 1.0, None)
         .send("Hello, Claude!")
         .await
         .expect("Failed to send message");

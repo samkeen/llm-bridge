@@ -13,4 +13,7 @@ pub enum ApiError {
 
     #[error("Response parse error: {0}")]
     ResponseParseError(#[from] serde_json::Error),
+
+    #[error("Missing required 'messages' parameter")]
+    MissingMessages,
 }
