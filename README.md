@@ -53,6 +53,7 @@ async fn main() {
         .await
         .expect("Failed to send message");
 
+    print!("Response: {}", response.first_message());
     println!("Response:\n{:?}", response);
 }
 ```

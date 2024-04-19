@@ -61,6 +61,54 @@ pub struct ResponseMessage {
     pub content: Vec<ContentBlock>,
 }
 
+impl ResponseMessage {
+    /// Returns the text content of the first content block in the response message.
+    ///
+    /// This method retrieves the first content block from the `content` vector of the `ResponseMessage`
+    /// and returns its text content as a `String`. If the `content` vector is empty, an empty string
+    /// is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use llm_api_adapter::models::ResponseMessage;
+    ///
+    /// let response_message = ResponseMessage {
+    ///     id: "123".to_string(),
+    ///     role: "assistant".to_string(),
+    ///     content: vec![
+    ///         ContentBlock {
+    ///             text: "Hello, how can I assist you today?".to_string(),
+    ///             block_type: "text".to_string(),
+    ///         },
+    ///         ContentBlock {
+    ///             text: "Let me know if you have any questions!".to_string(),
+    ///             block_type: "text".to_string(),
+    ///         },
+    ///     ],
+    /// };
+    ///
+    /// let first_message = response_message.first_message();
+    /// assert_eq!(first_message, "Hello, how can I assist you today?");
+    /// ```
+    ///
+    /// # Returns
+    ///
+    /// A `String` containing the text content of the first content block in the response message.
+    /// If the `content` vector is empty, an empty string is returned.
+    pub fn first_message(&self) -> String {
+        let content = self.content.first();
+        match content {
+            None => {
+                "".to_string()
+            }
+            Some(content) => {
+                content.text.to_string()
+            }
+        }
+    }
+}
+
 /// Implement Display trait for ResponseMessage
 impl Display for ResponseMessage {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

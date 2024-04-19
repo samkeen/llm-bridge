@@ -20,6 +20,7 @@ async fn test_send_message() {
         .send_message("claude-3-haiku-20240307", messages, 100, 1.0)
         .await
         .expect("Failed to send message");
+    print!("Response: {}", response.first_message());
     // Assert the response
     assert_eq!(response.role, "assistant");
     assert!(!response.content.is_empty());
