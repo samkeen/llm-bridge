@@ -1,6 +1,6 @@
 [package]
 name = "llm-api-adapter"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["Sam Keen <sam.sjk@gmail.com>"]
 description = "SDK for interacting with various Large Language Model (LLM) APIs"
