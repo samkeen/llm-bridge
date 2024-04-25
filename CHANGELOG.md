@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.3](https://github.com/samkeen/llm-api-adapter/compare/v0.1.2...v0.1.3) - 2024-04-21
+## [0.2.0](https://github.com/samkeen/llm-api-adapter/compare/v0.1.2...v0.2.0) - 2024-04-19
 
 ### Other
 - Swithed to builder pattern for send_message
