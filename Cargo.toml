@@ -1,11 +1,11 @@
 [package]
-name = "llm-api-adapter"
+name = "babel-bridge"
 version = "0.2.0"
 edition = "2021"
 authors = ["Sam Keen <sam.sjk@gmail.com>"]
 description = "SDK for interacting with various Large Language Model (LLM) APIs"
 license = "MIT"
-repository = "https://github.com/samkeen/llm-api-adapter"
+repository = "https://github.com/samkeen/babel-bridge"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
