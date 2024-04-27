@@ -1,6 +1,6 @@
 [package]
 name = "babel-bridge"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 authors = ["Sam Keen <sam.sjk@gmail.com>"]
 description = "SDK for interacting with various Large Language Model (LLM) APIs"
