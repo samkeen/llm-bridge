@@ -1,4 +1,6 @@
-# LLM API Adapter SDK for Rust
+# Babel Bridge
+
+## LLM API Adapter SDK for Rust
 
 This is a Rust SDK for interacting with various Large Language Model (LLM) APIs, starting with the Anthropic API. It
 allows you to
@@ -22,7 +24,7 @@ Add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-llm-api-adapter = "x.x.x"
+babel-bridge = "x.x.x"
 ```
 
 ## Usage
@@ -35,8 +37,8 @@ named `ANTHROPIC_API_KEY`.
 To send a single message to the Anthropic API and retrieve the response:
 
 ```rust
-use llm_api_adapter::client::AnthropicClient;
-use llm_api_adapter::models::Message;
+use babel_bridge::client::AnthropicClient;
+use babel_bridge::models::Message;
 
 #[tokio::main]
 async fn main() {
@@ -73,7 +75,7 @@ async fn main() {
 To start a conversation with Anthropic's language models:
 
 ```rust
-use llm_api_adapter::client::AnthropicClient;
+use babel_bridge::client::AnthropicClient;
 
 #[tokio::main]
 async fn main() {

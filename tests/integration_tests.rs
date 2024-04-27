@@ -1,7 +1,7 @@
 use dotenv::dotenv;
-use llm_api_adapter::client::AnthropicClient;
-use llm_api_adapter::error::ApiError;
-use llm_api_adapter::models::{Message};
+use babel_bridge::client::AnthropicClient;
+use babel_bridge::error::ApiError;
+use babel_bridge::models::{Message};
 
 
 #[tokio::test]

@@ -75,7 +75,7 @@ impl ResponseMessage {
     /// # Examples
     ///
     /// ```
-    /// use llm_api_adapter::models::ResponseMessage;
+    /// use babel_bridge::models::{ContentBlock, ResponseMessage};
     ///
     /// let response_message = ResponseMessage {
     ///     id: "123".to_string(),
