@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/samkeen/babel-bridge/compare/v0.2.0...v0.3.0) - 2024-04-27
+
+### Fixed
+- fixed tests and some project renaming artifacts
+
+### Other
+- Capturing more fields in API response
+
 ## [0.2.0](https://github.com/samkeen/babel-bridge/compare/v0.1.2...v0.2.0) - 2024-04-19
 
 ### Other
