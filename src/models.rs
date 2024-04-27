@@ -51,6 +51,20 @@ pub struct ContentBlock {
     pub block_type: String,
 }
 
+/// Tokens represent the underlying cost to llm systems.
+///
+/// Under the hood, the API transforms requests into a format suitable for the model.
+/// The model's output then goes through a parsing stage before becoming an API response.
+/// As a result, the token counts in usage will not match one-to-one with the exact
+/// visible content of an API request or response.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Usage {
+    /// The number of input tokens which were used.
+    pub input_tokens: usize,
+    /// The number of output tokens which were used.
+    pub output_tokens: usize,
+}
+
 /// Represents the response message received from the Anthropic API.
 ///
 /// The `ResponseMessage` struct contains the ID of the response, the role of the sender,
@@ -63,6 +77,16 @@ pub struct ResponseMessage {
     pub role: String,
     /// The list of content blocks in the response.
     pub content: Vec<ContentBlock>,
+    /// The llm model used
+    pub model: String,
+    /// The stop reason the model gave
+    pub stop_reason: String,
+    /// Which custom stop sequence was generated, if any.
+    /// These are custom text sequences provided in the request that will cause the model
+    /// to stop generating.
+    pub stop_sequence: Option<String>,
+    /// API request resource usage
+    pub usage: Usage,
 }
 
 impl ResponseMessage {
@@ -75,7 +99,7 @@ impl ResponseMessage {
     /// # Examples
     ///
     /// ```
-    /// use babel_bridge::models::{ContentBlock, ResponseMessage};
+    /// use babel_bridge::models::{ContentBlock, ResponseMessage, Usage};
     ///
     /// let response_message = ResponseMessage {
     ///     id: "123".to_string(),
@@ -90,6 +114,10 @@ impl ResponseMessage {
     ///             block_type: "text".to_string(),
     ///         },
     ///     ],
+    ///     model: String::from("Ultron"),
+    ///     stop_reason: String::from("end_turn"),
+    ///     stop_sequence: None,
+    ///     usage: Usage{ input_tokens: 100, output_tokens: 1000}
     /// };
     ///
     /// let first_message = response_message.first_message();
@@ -151,5 +179,14 @@ impl<'a> ChatResponse<'a> {
     /// An updated `ChatResponse` instance containing the last response and the updated chat session.
     pub async fn add(self, message: &str) -> Result<ChatResponse<'a>, ApiError> {
         self.session.send(message).await
+    }
+    ///
+    ///
+    pub fn usage_tallies(&self) -> Usage {
+        Usage {
+            input_tokens: self.session.input_tokens_tally,
+            output_tokens:
+            self.session.output_tokens_tally,
+        }
     }
 }

@@ -2,6 +2,7 @@ use dotenv::dotenv;
 use babel_bridge::client::AnthropicClient;
 use babel_bridge::error::ApiError;
 use babel_bridge::models::{Message};
+use pretty_assertions::{assert_eq};
 
 
 #[tokio::test]
@@ -26,7 +27,12 @@ async fn test_send_message() {
         .send()
         .await
         .expect("Failed to send message");
-    print!("Response: {}", response.first_message());
+    println!("Response: {}", response.first_message());
+    println!("Response model: {}", response.model);
+    println!("Stop reason: {}", response.stop_reason);
+    println!("Stop sequence: {}", response.stop_sequence.unwrap_or("".to_string()));
+    println!("Input tokens: {}", response.usage.input_tokens);
+    println!("Output tokens: {}", response.usage.output_tokens);
     // Assert the response
     assert_eq!(response.role, "assistant");
     assert!(!response.content.is_empty());
@@ -49,6 +55,8 @@ async fn test_chat() {
 
     println!("Last response: {}", conversation.last_response());
     println!("Dialog:\n{:?}", conversation.dialog());
+    let first_usage_tallies = conversation.usage_tallies();
+    println!("Token usage Tallies:\n{:?}", first_usage_tallies);
     assert_eq!(conversation.dialog().len(), 2);
 
     let conversation = conversation
@@ -58,7 +66,11 @@ async fn test_chat() {
 
     println!("Last response: {}", conversation.last_response());
     println!("Dialog:\n{:?}", conversation.dialog());
+    let last_usage_tallies = conversation.usage_tallies();
+    println!("Token usage Tallies:\n{:?}", last_usage_tallies);
     assert_eq!(conversation.dialog().len(), 4);
+    assert!(last_usage_tallies.input_tokens > first_usage_tallies.input_tokens);
+    assert!(last_usage_tallies.output_tokens > first_usage_tallies.output_tokens);
 }
 
 #[tokio::test]

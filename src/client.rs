@@ -1,6 +1,6 @@
 use log::{debug, error};
 use crate::error::ApiError;
-use crate::models::{ChatResponse, Message, RequestBody, ResponseMessage};
+use crate::models::{ChatResponse, Message, RequestBody, ResponseMessage, Usage};
 use reqwest::Client;
 
 const API_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
@@ -182,6 +182,8 @@ impl AnthropicClient {
             max_tokens,
             temperature,
             system_prompt,
+            input_tokens_tally: 0,
+            output_tokens_tally: 0,
         }
     }
 }
@@ -197,6 +199,8 @@ pub struct ChatSession<'a> {
     max_tokens: u32,
     temperature: f32,
     system_prompt: Option<String>,
+    pub(crate) input_tokens_tally: usize,
+    pub(crate) output_tokens_tally: usize,
 }
 
 impl<'a> ChatSession<'a> {
@@ -224,6 +228,9 @@ impl<'a> ChatSession<'a> {
             .system_prompt(self.system_prompt.as_deref().unwrap_or(""))
             .send()
             .await?;
+
+        self.input_tokens_tally += response.usage.input_tokens;
+        self.output_tokens_tally += response.usage.output_tokens;
 
         let content = response.content.into_iter()
             .map(|block| block.text)
