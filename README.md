@@ -1,4 +1,4 @@
-# Babel Bridge
+# LLM Bridge
 
 ## LLM API Adapter SDK for Rust
 
@@ -24,7 +24,7 @@ Add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-babel-bridge = "x.x.x"
+llm-bridge = "x.x.x"
 ```
 
 ## Usage
@@ -37,73 +37,66 @@ named `ANTHROPIC_API_KEY`.
 To send a single message to the Anthropic API and retrieve the response:
 
 ```rust
-use babel_bridge::client::AnthropicClient;
-use babel_bridge::models::Message;
+use llm_bridge::client::{ClientLlm, LlmClient};
+use llm_bridge::error::ApiError;
 
 #[tokio::main]
 async fn main() {
-    let api_key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set.");
-    let client = AnthropicClient::new(api_key.to_string());
-
-    let messages = vec![Message {
-        role: "user".to_string(),
-        content: "Hello, Claude!".to_string(),
-    }];
+    let api_key = "WWWWWWWWWW".to_string();
+    let client_type = ClientLlm::OpenAI;
+    let mut client = LlmClient::new(client_type, api_key);
 
     let response = client
         .request()
-        .messages(messages)
-        // optional, defaults to DEFAULT_MODEL (client.rs)
+        .user_message("Hello, GPT!")
+        .send()
+        .await
+        .expect("Failed to send message");
+    println!("Response: {:?}", response);
+    // Assert the response
+    assert_eq!(response.role(), "assistant");
+    assert_eq!(response.usage().input_tokens, 18);
+    assert!(response.usage().output_tokens > 0);
+    assert!(!response.first_message().is_empty());
+}
+```
+
+Another example Using Anthropic's API and overriding some of the defaults on the request
+
+```rust
+use llm_bridge::client::{ClientLlm, LlmClient};
+use llm_bridge::error::ApiError;
+
+#[tokio::main]
+async fn main() {
+    let api_key = "WWWWWWWWWW".to_string();
+    let client_type = ClientLlm::Anthropic;
+    let mut client = LlmClient::new(client_type, api_key);
+
+    let response = client
+        .request()
         .model("claude-3-haiku-20240307")
-        // optional, defaults to DEFAULT_MAX_TOKENS (client.rs)
+        .user_message("Hello, Claude!")
         .max_tokens(100)
-        // optional, defaults to DEFAULT_TEMP (client.rs)
         .temperature(1.0)
-        // optional, system prompt is not used if not provided
         .system_prompt("You are a haiku assistant.") // optional
         .send()
         .await
         .expect("Failed to send message");
-
-    print!("Response: {}", response.first_message());
-    println!("Response:\n{:?}", response);
-}
-```
-
-### Engaging in a Conversation
-
-To start a conversation with Anthropic's language models:
-
-```rust
-use babel_bridge::client::AnthropicClient;
-
-#[tokio::main]
-async fn main() {
-    let api_key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set.");
-    let client = AnthropicClient::new(api_key.to_string());
-
-    let conversation = client
-        .chat("claude-3-haiku-20240307", 100, 1.0, None)
-        .send("Hello, Claude!")
-        .await
-        .expect("Failed to send message");
-
-    println!("Last response: {}", conversation.last_response());
-    println!("Dialog:\n{:?}", conversation.dialog());
-
-    let conversation = conversation
-        .add("How are you doing?")
-        .await
-        .expect("Failed to send message");
-
-    println!("Last response: {}", conversation.last_response());
-    println!("Dialog:\n{:?}", conversation.dialog());
+    println!("Response: {:?}", response);
+    // Assert the response
+    assert_eq!(response.role(), "assistant");
+    assert_eq!(response.model(), "claude-3-haiku-20240307");
+    assert_eq!(response.usage().input_tokens, 18);
+    assert!(response.usage().output_tokens > 0);
+    assert!(!response.first_message().is_empty());
 }
 ```
 
 ## Documentation
 
-For detailed documentation and more examples, please refer to the [API documentation](link_to_docs).
+For detailed documentation and more examples, please refer to
+the [API documentation](https://docs.rs/llm-bridge/latest/llm_bridge/).
 
 ## Contributing
 

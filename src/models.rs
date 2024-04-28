@@ -1,192 +1,249 @@
-use fmt::Display;
-use std::fmt;
+//! This module defines the data models used for interacting with different LLM APIs.
+//!
+//! The main strategy employed to support multiple LLM APIs is to define separate response
+//! structs for each API (`AnthropicResponse` and `OpenAIResponse`) and use an enum
+//! (`ResponseMessage`) to represent the different response types. The `ResponseMessage` enum
+//! provides a unified interface for accessing common fields and methods across different APIs.
+//!
+//! To add support for a new LLM API:
+//! 1. Define a new response struct for the API, implementing the necessary deserialization logic.
+//! 2. Add a new variant to the `ResponseMessage` enum for the new API response type.
+//! 3. Update the implementation of the `ResponseMessage` methods to handle the new variant and
+//!    provide the appropriate logic for accessing the fields and data.
+//!
+//! By following this approach, the `ResponseMessage` enum acts as a common interface for handling
+//! responses from different LLM APIs, while the individual response structs encapsulate the
+//! specific details of each API's response format.
+
 use serde::{Deserialize, Serialize};
-use crate::client::ChatSession;
-use crate::error::ApiError;
+use std::fmt;
 
 /// Represents a message in the conversation.
-///
-/// A `Message` struct contains the role of the sender (either "user" or "assistant")
-/// and the content of the message.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Message {
-    /// The role of the sender, either "user" or "assistant".
     pub role: String,
-    /// The content of the message.
     pub content: String,
 }
 
 /// Represents the request body sent to the Anthropic API.
-///
-/// The `RequestBody` struct contains the model name, the list of messages,
-/// the maximum number of tokens to generate, and the temperature value.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct RequestBody {
-    /// The name of the model to use for generating the response.
     pub model: String,
-    /// The list of messages in the conversation.
     pub messages: Vec<Message>,
-    /// The maximum number of tokens to generate in the response.
     pub max_tokens: u32,
-    /// The temperature value to control the randomness of the generated response.
     pub temperature: f32,
-    /// A system prompt is a way of providing context and instructions to Claude, such as 
-    /// specifying a particular goal or role. 
-    /// https://docs.anthropic.com/claude/docs/system-prompts
     pub system: String,
 }
 
 /// Represents a block of content in the API response.
-///
-/// A `ContentBlock` struct contains the text content and the type of the block.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ContentBlock {
-    /// The text content of the block.
+pub struct AnthropicContentBlock {
     pub text: String,
-    /// The type of the content block.
-    ///
-    /// The `#[serde(rename = "type")]` attribute is used to map the `type` field
-    /// in the JSON response to the `block_type` field in the struct.
     #[serde(rename = "type")]
     pub block_type: String,
 }
 
 /// Tokens represent the underlying cost to llm systems.
-///
-/// Under the hood, the API transforms requests into a format suitable for the model.
-/// The model's output then goes through a parsing stage before becoming an API response.
-/// As a result, the token counts in usage will not match one-to-one with the exact
-/// visible content of an API request or response.
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Usage {
-    /// The number of input tokens which were used.
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct AnthropicUsage {
     pub input_tokens: usize,
-    /// The number of output tokens which were used.
     pub output_tokens: usize,
 }
 
-/// Represents the response message received from the Anthropic API.
-///
-/// The `ResponseMessage` struct contains the ID of the response, the role of the sender,
-/// and the list of content blocks in the response.
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct CommonUsage {
+    pub input_tokens: usize,
+    pub output_tokens: usize,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ResponseMessage {
-    /// The ID of the response message.
+pub(crate) struct AnthropicResponse {
     pub id: String,
-    /// The role of the sender, either "user" or "assistant".
     pub role: String,
-    /// The list of content blocks in the response.
-    pub content: Vec<ContentBlock>,
-    /// The llm model used
+    pub content: Vec<AnthropicContentBlock>,
     pub model: String,
-    /// The stop reason the model gave
     pub stop_reason: String,
-    /// Which custom stop sequence was generated, if any.
-    /// These are custom text sequences provided in the request that will cause the model
-    /// to stop generating.
     pub stop_sequence: Option<String>,
-    /// API request resource usage
-    pub usage: Usage,
+    pub usage: AnthropicUsage,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct OpenAIResponse {
+    pub id: String,
+    pub object: String,
+    pub created: i64,
+    pub model: String,
+    pub usage: OpenAIUsage,
+    pub choices: Vec<OpenAIChoice>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub(crate) struct OpenAIUsage {
+    pub prompt_tokens: usize,
+    pub completion_tokens: usize,
+    pub total_tokens: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct OpenAIChoice {
+    pub message: OpenAIMessage,
+    pub logprobs: Option<serde_json::Value>,
+    pub finish_reason: String,
+    pub index: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct OpenAIMessage {
+    pub role: String,
+    pub content: String,
+}
+
+/// Represents the response message received from an LLM API.
+///
+/// The `ResponseMessage` enum encapsulates the different response types from various LLM APIs,
+/// providing a unified interface for accessing common fields and methods.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub enum ResponseMessage {
+    Anthropic(AnthropicResponse),
+    OpenAI(OpenAIResponse),
 }
 
 impl ResponseMessage {
-    /// Returns the text content of the first content block in the response message.
-    ///
-    /// This method retrieves the first content block from the `content` vector of the `ResponseMessage`
-    /// and returns its text content as a `String`. If the `content` vector is empty, an empty string
-    /// is returned.
+    /// Returns the text content of the first message in the response.
     ///
     /// # Examples
     ///
     /// ```
-    /// use babel_bridge::models::{ContentBlock, ResponseMessage, Usage};
-    ///
-    /// let response_message = ResponseMessage {
-    ///     id: "123".to_string(),
-    ///     role: "assistant".to_string(),
-    ///     content: vec![
-    ///         ContentBlock {
-    ///             text: "Hello, how can I assist you today?".to_string(),
-    ///             block_type: "text".to_string(),
-    ///         },
-    ///         ContentBlock {
-    ///             text: "Let me know if you have any questions!".to_string(),
-    ///             block_type: "text".to_string(),
-    ///         },
-    ///     ],
-    ///     model: String::from("Ultron"),
-    ///     stop_reason: String::from("end_turn"),
-    ///     stop_sequence: None,
-    ///     usage: Usage{ input_tokens: 100, output_tokens: 1000}
-    /// };
-    ///
-    /// let first_message = response_message.first_message();
-    /// assert_eq!(first_message, "Hello, how can I assist you today?");
+    /// # use llm_bridge::models::ResponseMessage;
+    /// # let response = ResponseMessage::Anthropic(/* ... */);
+    /// let first_message = response.first_message();
+    /// println!("First message: {}", first_message);
     /// ```
-    ///
-    /// # Returns
-    ///
-    /// A `String` containing the text content of the first content block in the response message.
-    /// If the `content` vector is empty, an empty string is returned.
     pub fn first_message(&self) -> String {
-        let content = self.content.first();
-        match content {
-            None => {
-                "".to_string()
+        match self {
+            ResponseMessage::Anthropic(response) => {
+                if let Some(content) = response.content.first() {
+                    content.text.clone()
+                } else {
+                    String::new()
+                }
             }
-            Some(content) => {
-                content.text.to_string()
+            ResponseMessage::OpenAI(response) => {
+                if let Some(choice) = response.choices.first() {
+                    choice.message.content.clone()
+                } else {
+                    String::new()
+                }
             }
+        }
+    }
+
+    /// Returns the role of the sender in the response.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use llm_bridge::models::ResponseMessage;
+    /// # let response = ResponseMessage::Anthropic(AnthropicResponse { });
+    /// let role = response.role();
+    /// println!("Role: {}", role);
+    /// ```
+    pub fn role(&self) -> &str {
+        match self {
+            ResponseMessage::Anthropic(response) => &response.role,
+            ResponseMessage::OpenAI(response) => {
+                if let Some(choice) = response.choices.first() {
+                    &choice.message.role
+                } else {
+                    ""
+                }
+            }
+        }
+    }
+
+    /// Returns the name of the model used for generating the response.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use llm_bridge::models::ResponseMessage;
+    /// # let response = ResponseMessage::Anthropic(/* ... */);
+    /// let model = response.model();
+    /// println!("Model: {}", model);
+    /// ```
+    pub fn model(&self) -> &str {
+        match self {
+            ResponseMessage::Anthropic(response) => &response.model,
+            ResponseMessage::OpenAI(response) => &response.model,
+        }
+    }
+
+    /// Returns the stop reason for the generated response.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use llm_bridge::models::ResponseMessage;
+    /// # let response = ResponseMessage::Anthropic(/* ... */);
+    /// let stop_reason = response.stop_reason();
+    /// println!("Stop reason: {}", stop_reason);
+    /// ```
+    pub fn stop_reason(&self) -> &str {
+        match self {
+            ResponseMessage::Anthropic(response) => &response.stop_reason,
+            ResponseMessage::OpenAI(response) => {
+                if let Some(choice) = response.choices.first() {
+                    &choice.finish_reason
+                } else {
+                    ""
+                }
+            }
+        }
+    }
+
+    /// Returns the usage information for the generated response.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use llm_bridge::models::ResponseMessage;
+    /// # let response = ResponseMessage::Anthropic(/* ... */);
+    /// let usage = response.usage();
+    /// println!("Input tokens: {}", usage.input_tokens);
+    /// println!("Output tokens: {}", usage.output_tokens);
+    /// ```
+    pub fn usage(&self) -> CommonUsage {
+        match self {
+            ResponseMessage::Anthropic(response) => CommonUsage {
+                input_tokens: response.usage.input_tokens,
+                output_tokens: response.usage.output_tokens,
+            },
+            ResponseMessage::OpenAI(response) => CommonUsage {
+                input_tokens: response.usage.prompt_tokens,
+                output_tokens: response.usage.completion_tokens,
+            },
         }
     }
 }
 
-/// Implement Display trait for ResponseMessage
-impl Display for ResponseMessage {
+impl fmt::Display for ResponseMessage {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ResponseMessage {{ id: {}, role: {}, content: {:?} }}", self.id, self.role, self.content)
-    }
-}
-
-/// Represents the response from a chat session.
-///
-/// The lifetime parameter `'a` indicates that the `ChatResponse` borrows data from a `ChatSession`
-/// instance and can only live as long as the `ChatSession` instance.
-pub struct ChatResponse<'a> {
-    pub(crate) session: ChatSession<'a>,
-    pub(crate) last_response: String,
-}
-
-impl<'a> ChatResponse<'a> {
-    /// Returns the last response from the chat session.
-    pub fn last_response(&self) -> &str {
-        &self.last_response
-    }
-
-    /// Returns the entire conversation history of the chat session.
-    pub fn dialog(&self) -> &[Message] {
-        &self.session.messages
-    }
-
-    /// Sends a new user message to continue the conversation and returns the updated `ChatResponse`.
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - The user message to send.
-    ///
-    /// # Returns
-    ///
-    /// An updated `ChatResponse` instance containing the last response and the updated chat session.
-    pub async fn add(self, message: &str) -> Result<ChatResponse<'a>, ApiError> {
-        self.session.send(message).await
-    }
-    ///
-    ///
-    pub fn usage_tallies(&self) -> Usage {
-        Usage {
-            input_tokens: self.session.input_tokens_tally,
-            output_tokens:
-            self.session.output_tokens_tally,
+        match self {
+            ResponseMessage::Anthropic(response) => {
+                write!(
+                    f,
+                    "ResponseMessage {{ id: {}, role: {}, content: {:?} }}",
+                    response.id, response.role, response.content
+                )
+            }
+            ResponseMessage::OpenAI(response) => {
+                write!(
+                    f,
+                    "ResponseMessage {{ id: {}, object: {}, model: {}, choices: {:?} }}",
+                    response.id, response.object, response.model, response.choices
+                )
+            }
         }
     }
 }
