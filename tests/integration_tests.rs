@@ -1,90 +1,75 @@
 use dotenv::dotenv;
-use babel_bridge::client::AnthropicClient;
-use babel_bridge::error::ApiError;
-use babel_bridge::models::{Message};
+use llm_bridge::client::{ClientLlm, LlmClient};
+use llm_bridge::error::ApiError;
 use pretty_assertions::{assert_eq};
 
 
 #[tokio::test]
-async fn test_send_message() {
+async fn test_send_message_anthropic() {
     dotenv().ok();
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .expect("ANTHROPIC_API_KEY must be set.");
-    let client = AnthropicClient::new(api_key.to_string());
-
-    let messages = vec![Message {
-        role: "user".to_string(),
-        content: "Hello, Claude!".to_string(),
-    }];
+    let client_type = ClientLlm::Anthropic;
+    let mut client = LlmClient::new(client_type, api_key);
 
     let response = client
         .request()
         .model("claude-3-haiku-20240307")
-        .messages(messages)
+        .user_message("Hello, Claude!")
         .max_tokens(100)
         .temperature(1.0)
         .system_prompt("You are a haiku assistant.") // optional
         .send()
         .await
         .expect("Failed to send message");
-    println!("Response: {}", response.first_message());
-    println!("Response model: {}", response.model);
-    println!("Stop reason: {}", response.stop_reason);
-    println!("Stop sequence: {}", response.stop_sequence.unwrap_or("".to_string()));
-    println!("Input tokens: {}", response.usage.input_tokens);
-    println!("Output tokens: {}", response.usage.output_tokens);
+    println!("Response: {:?}", response);
     // Assert the response
-    assert_eq!(response.role, "assistant");
-    assert!(!response.content.is_empty());
-    assert_eq!(response.content[0].block_type, "text");
-    assert!(!response.content[0].text.is_empty());
+    assert_eq!(response.role(), "assistant");
+    assert_eq!(response.model(), "claude-3-haiku-20240307");
+    assert_eq!(response.stop_reason(), "end_turn");
+    assert_eq!(response.usage().input_tokens, 18);
+    assert!(response.usage().output_tokens > 0);
+    assert!(!response.first_message().is_empty());
 }
 
 #[tokio::test]
-async fn test_chat() {
+async fn test_send_message_openai() {
     dotenv().ok();
-    let api_key = std::env::var("ANTHROPIC_API_KEY")
+    let api_key = std::env::var("OPENAI_API_KEY")
         .expect("ANTHROPIC_API_KEY must be set.");
-    let client = AnthropicClient::new(api_key.to_string());
-
-    let conversation = client
-        .chat("claude-3-haiku-20240307", 100, 1.0, None)
-        .send("Hello, Claude!")
-        .await
-        .expect("Failed to send message");
-
-    println!("Last response: {}", conversation.last_response());
-    println!("Dialog:\n{:?}", conversation.dialog());
-    let first_usage_tallies = conversation.usage_tallies();
-    println!("Token usage Tallies:\n{:?}", first_usage_tallies);
-    assert_eq!(conversation.dialog().len(), 2);
-
-    let conversation = conversation
-        .add("How are you doing?")
-        .await
-        .expect("Failed to send message");
-
-    println!("Last response: {}", conversation.last_response());
-    println!("Dialog:\n{:?}", conversation.dialog());
-    let last_usage_tallies = conversation.usage_tallies();
-    println!("Token usage Tallies:\n{:?}", last_usage_tallies);
-    assert_eq!(conversation.dialog().len(), 4);
-    assert!(last_usage_tallies.input_tokens > first_usage_tallies.input_tokens);
-    assert!(last_usage_tallies.output_tokens > first_usage_tallies.output_tokens);
-}
-
-#[tokio::test]
-async fn test_invalid_api_key() {
-    let api_key = "i am invalid";
-    let client = AnthropicClient::new(api_key.into());
-    let messages = vec![Message {
-        role: "user".to_string(),
-        content: "Hello, Claude!".to_string(),
-    }];
+    let client_type = ClientLlm::OpenAI;
+    let mut client = LlmClient::new(client_type, api_key);
 
     let response = client
         .request()
-        .messages(messages)
+        .model("gpt-4o")
+        .user_message("Hello, GPT!")
+        .max_tokens(100)
+        .temperature(1.0)
+        .system_prompt("You are a haiku assistant.") // optional
+        .send()
+        .await
+        .expect("Failed to send message");
+    println!("Response: {:?}", response);
+    // Assert the response
+    assert_eq!(response.role(), "assistant");
+    assert!(response.model().starts_with("gpt-4o"));
+    assert_eq!(response.stop_reason(), "stop");
+    assert_eq!(response.usage().input_tokens, 22);
+    assert!(response.usage().output_tokens > 0);
+    assert!(!response.first_message().is_empty());
+}
+
+
+#[tokio::test]
+async fn test_invalid_api_key() {
+    let api_key = "i am invalid".to_string();
+    let client_type = ClientLlm::Anthropic;
+    let mut client = LlmClient::new(client_type, api_key);
+
+    let response = client
+        .request()
+        .user_message("Hello, Claude!")
         .send()
         .await;
 

@@ -16,4 +16,7 @@ pub enum ApiError {
 
     #[error("Missing required 'messages' parameter")]
     MissingMessages,
+    
+    #[error("Invalid API Usage: {0}")]
+    InvalidUsage(String),
 }

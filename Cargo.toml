@@ -1,11 +1,11 @@
 [package]
-name = "babel-bridge"
-version = "0.2.2"
+name = "llm-bridge"
+version = "0.1.0"
 edition = "2021"
 authors = ["Sam Keen <sam.sjk@gmail.com>"]
-description = "SDK for interacting with various Large Language Model (LLM) APIs"
+description = "SDK for interacting with various Large Language Model (LLM) APIs using a common interface"
 license = "MIT"
-repository = "https://github.com/samkeen/babel-bridge"
+repository = "https://github.com/samkeen/llm-bridge"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -15,6 +15,7 @@ serde = { version = "1.0.197", features = ["derive"] }
 thiserror = "1.0.58"
 serde_json = "1.0.115"
 log = "0.4.21"
+async-trait = "0.1.80"
 
 [dev-dependencies]
 dotenv = "0.15.0"

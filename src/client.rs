@@ -1,13 +1,58 @@
+//! This module provides a client for interacting with different LLM APIs.
+//!
+//! The `LlmClient` struct is the main entry point for making requests to LLM APIs.
+//! It uses a `RequestBuilder` to construct the request parameters and sends the request
+//! using the appropriate client implementation based on the selected `ClientLlm` enum variant.
+//!
+//! The `LlmClientTrait` defines the common interface for sending messages to LLM APIs,
+//! and the `AnthropicClient` and `OpenAIClient` structs implement this trait for their respective APIs.
+
 use log::{debug, error};
 use crate::error::ApiError;
-use crate::models::{ChatResponse, Message, RequestBody, ResponseMessage, Usage};
+use crate::models::{Message, RequestBody, ResponseMessage};
 use reqwest::Client;
 
 const API_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
 const API_VERSION: &str = "2023-06-01";
-const DEFAULT_MODEL: &str = "claude-3-haiku-20240307";
+const DEFAULT_ANTHROPIC_MODEL: &str = "claude-3-haiku-20240307";
+
+const DEFAULT_OPENAI_MODEL: &str = "gpt-4o";
 const DEFAULT_MAX_TOKENS: u32 = 100;
-const DEFAULT_TEMP: f32 = 1.0;
+const DEFAULT_TEMP: f32 = 0.0;
+
+/// Supported LLMs
+pub enum ClientLlm {
+    Anthropic,
+    OpenAI,
+}
+
+/// Trait defining the common interface for LLM clients.
+#[async_trait::async_trait]
+pub trait LlmClientTrait {
+    /// Sends a message to the LLM API and returns the response.
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The name of the model to use for generating the response.
+    /// * `messages` - The list of messages in the conversation.
+    /// * `max_tokens` - The maximum number of tokens to generate in the response.
+    /// * `temperature` - The temperature value to control the randomness of the generated response.
+    /// * `system_prompt` - The system prompt to provide context and instructions to the model.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the `ResponseMessage` on success, or an `ApiError` on failure.
+    async fn send_message(
+        &self,
+        model: &str,
+        messages: Vec<Message>,
+        max_tokens: u32,
+        temperature: f32,
+        system_prompt: &str,
+    ) -> Result<ResponseMessage, ApiError>;
+
+    fn client_type(&self) -> ClientLlm;
+}
 
 /// Represents a builder for constructing a request to the Anthropic API.
 ///
@@ -15,7 +60,7 @@ const DEFAULT_TEMP: f32 = 1.0;
 /// messages, max tokens, temperature, and system prompt. The `send` method sends the request
 /// to the API and returns the response.
 pub struct RequestBuilder<'a> {
-    client: &'a AnthropicClient,
+    client: &'a dyn LlmClientTrait,
     model: Option<String>,
     messages: Option<Vec<Message>>,
     max_tokens: Option<u32>,
@@ -24,8 +69,7 @@ pub struct RequestBuilder<'a> {
 }
 
 impl<'a> RequestBuilder<'a> {
-    /// Creates a new instance of `RequestBuilder` with the provided `AnthropicClient`.
-    pub fn new(client: &'a AnthropicClient) -> Self {
+    pub fn new(client: &'a dyn LlmClientTrait) -> Self {
         RequestBuilder {
             client,
             model: None,
@@ -36,15 +80,26 @@ impl<'a> RequestBuilder<'a> {
         }
     }
 
-    /// Sets the model to use for the request.
+    /// Sets the model to use for generating the response.
     pub fn model(mut self, model: &str) -> Self {
         self.model = Some(model.to_string());
         self
     }
 
-    /// Sets the messages to include in the request.
-    pub fn messages(mut self, messages: Vec<Message>) -> Self {
-        self.messages = Some(messages);
+    /// Adds a user message to the conversation.
+    pub fn user_message(mut self, message: &str) -> Self {
+        if let Some(mut messages) = self.messages {
+            messages.push(Message {
+                role: "user".to_string(),
+                content: message.to_string(),
+            });
+            self.messages = Some(messages);
+        } else {
+            self.messages = Some(vec![Message {
+                role: "user".to_string(),
+                content: message.to_string(),
+            }]);
+        }
         self
     }
 
@@ -60,25 +115,53 @@ impl<'a> RequestBuilder<'a> {
         self
     }
 
-    /// Sets the system prompt to provide context or instructions for the request.
+    /// Sets the system prompt to provide context and instructions to the model.
     pub fn system_prompt(mut self, system_prompt: &str) -> Self {
         self.system_prompt = Some(system_prompt.to_string());
         self
     }
 
-    /// Sends the request to the Anthropic API and returns the response.
+    /// Sends the request to the LLM API and returns the response.
     ///
-    /// # Returns
+    /// # Examples
     ///
-    /// A `ResponseMessage` instance containing the API response.
+    /// ```no_run
+    /// use llm_bridge::client::{LlmClient, ClientLlm};
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let api_key = "your_api_key".to_string();
+    ///     let client_type = ClientLlm::Anthropic;
+    ///     let mut client = LlmClient::new(client_type, api_key);
+    ///
+    ///     let response = client
+    ///         .request()
+    ///         .model("claude-3-haiku-20240307")
+    ///         .user_message("Hello, Claude!")
+    ///         .max_tokens(100)
+    ///         .temperature(1.0)
+    ///         .system_prompt("You are a haiku assistant.")
+    ///         .send()
+    ///         .await
+    ///         .expect("Failed to send message");
+    ///
+    ///     println!("Response: {}", response.first_message());
+    /// }
+    /// ```
     pub async fn send(self) -> Result<ResponseMessage, ApiError> {
-        let model = self.model.unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let model = self.model.unwrap_or_else(|| {
+            match self.client.client_type() {
+                ClientLlm::Anthropic => DEFAULT_ANTHROPIC_MODEL.to_string(),
+                ClientLlm::OpenAI => DEFAULT_OPENAI_MODEL.to_string(),
+                // Add more cases for other LLM APIs as needed
+            }
+        });
         let messages = self.messages.ok_or(ApiError::MissingMessages)?;
         let max_tokens = self.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
         let temperature = self.temperature.unwrap_or(DEFAULT_TEMP);
         let system_prompt = self.system_prompt.unwrap_or_default();
 
-        self.client.send_message_inner(
+        self.client.send_message(
             &model,
             messages,
             max_tokens,
@@ -95,31 +178,15 @@ pub struct AnthropicClient {
 }
 
 impl AnthropicClient {
-    /// Creates a new instance of `AnthropicClient` with the provided API key.
     pub fn new(api_key: String) -> Self {
         let client = Client::new();
         AnthropicClient { api_key, client }
     }
+}
 
-    /// Returns a new `RequestBuilder` instance for constructing a request.
-    pub fn request(&self) -> RequestBuilder {
-        RequestBuilder::new(self)
-    }
-
-    /// Sends a single message to the Anthropic API and retrieves the response.
-    ///
-    /// # Arguments
-    ///
-    /// * `model` - The name of the model to use for generating the response.
-    /// * `messages` - The list of messages to send to the API.
-    /// * `max_tokens` - The maximum number of tokens to generate in the response.
-    /// * `temperature` - The temperature value to control the randomness of the generated response.
-    /// * `system_prompt` - The system prompt to provide context or instructions for the request.
-    ///
-    /// # Returns
-    ///
-    /// A `ResponseMessage` instance containing the API response.
-    async fn send_message_inner(
+#[async_trait::async_trait]
+impl LlmClientTrait for AnthropicClient {
+    async fn send_message(
         &self,
         model: &str,
         messages: Vec<Message>,
@@ -134,7 +201,36 @@ impl AnthropicClient {
             temperature,
             system: system_prompt.to_string(),
         };
-
+        // https://docs.anthropic.com/en/api/messages
+        //
+        // Request JSON
+        // {
+        //     "model": "claude-3-opus-20240229",
+        //     "max_tokens": 1024,
+        //     "messages": [
+        //         {"role": "user", "content": "Hello, world"}
+        //     ]
+        // }
+        //
+        // Response JSON
+        // {
+        //   "content": [
+        //     {
+        //       "text": "Hi! My name is Claude.",
+        //       "type": "text"
+        //     }
+        //   ],
+        //   "id": "msg_013Zva2CMHLNnXjNJJKqJ2EF",
+        //   "model": "claude-3-opus-20240229",
+        //   "role": "assistant",
+        //   "stop_reason": "end_turn",
+        //   "stop_sequence": null,
+        //   "type": "message",
+        //   "usage": {
+        //     "input_tokens": 10,
+        //     "output_tokens": 25
+        //   }
+        // }
         let response = self
             .client
             .post(API_ENDPOINT)
@@ -147,12 +243,10 @@ impl AnthropicClient {
         let resp_status = response.status();
         let resp_text = response.text().await.unwrap_or("".into());
         if resp_status.is_client_error() {
-            // Handle 4xx error responses
             error!("Client error [{}]: {}", resp_status, resp_text);
             return Err(ApiError::ClientError(
                 format!("Status: {} - Error: {}", resp_status, resp_text)));
         } else if resp_status.is_server_error() {
-            // Handle 5xx error responses
             error!("Server error [{}]: {}", resp_status, resp_text);
             return Err(ApiError::ServerError(
                 format!("Status: {} - Error: {}", resp_status, resp_text)));
@@ -163,87 +257,123 @@ impl AnthropicClient {
         Ok(response_message)
     }
 
-    /// Creates a new `ChatSession` with the specified model, max tokens, and temperature.
-    ///
-    /// # Arguments
-    ///
-    /// * `model` - The name of the model to use for the chat session.
-    /// * `max_tokens` - The maximum number of tokens to generate in each response.
-    /// * `temperature` - The temperature value to control the randomness of the generated responses.
-    ///
-    /// # Returns
-    ///
-    /// A new `ChatSession` instance.
-    pub fn chat(&self, model: &str, max_tokens: u32, temperature: f32, system_prompt: Option<String>) -> ChatSession {
-        ChatSession {
-            client: self,
-            model: model.to_string(),
-            messages: Vec::new(),
-            max_tokens,
-            temperature,
-            system_prompt,
-            input_tokens_tally: 0,
-            output_tokens_tally: 0,
-        }
+    fn client_type(&self) -> ClientLlm {
+        ClientLlm::Anthropic
     }
 }
 
-/// Represents an ongoing chat session with the Anthropic API.
-///
-/// The lifetime parameter `'a` indicates that the `ChatSession` borrows data from an `AnthropicClient`
-/// instance and can only live as long as the `AnthropicClient` instance.
-pub struct ChatSession<'a> {
-    client: &'a AnthropicClient,
-    model: String,
-    pub(crate) messages: Vec<Message>,
-    max_tokens: u32,
-    temperature: f32,
-    system_prompt: Option<String>,
-    pub(crate) input_tokens_tally: usize,
-    pub(crate) output_tokens_tally: usize,
+/// Wrapper around the OpenAI LLM API client.
+pub struct OpenAIClient {
+    api_key: String,
+    client: Client,
 }
 
-impl<'a> ChatSession<'a> {
-    /// Sends a user message to the chat session and retrieves the response from the API.
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - The user message to send.
-    ///
-    /// # Returns
-    ///
-    /// A `ChatResponse` instance containing the last response and the updated chat session.
-    pub async fn send(mut self, message: &str) -> Result<ChatResponse<'a>, ApiError> {
-        self.messages.push(Message {
-            role: "user".to_string(),
-            content: message.to_string(),
-        });
+impl OpenAIClient {
+    pub fn new(api_key: String) -> Self {
+        let client = Client::new();
+        OpenAIClient { api_key, client }
+    }
+}
 
-        let response = self.client
-            .request()
-            .model(&self.model)
-            .messages(self.messages.clone())
-            .max_tokens(self.max_tokens)
-            .temperature(self.temperature)
-            .system_prompt(self.system_prompt.as_deref().unwrap_or(""))
+#[async_trait::async_trait]
+impl LlmClientTrait for OpenAIClient {
+    async fn send_message(
+        &self,
+        model: &str,
+        mut messages: Vec<Message>,
+        max_tokens: u32,
+        temperature: f32,
+        system_prompt: &str,
+    ) -> Result<ResponseMessage, ApiError> {
+        // OpenAI places the System prompt in the messages list
+        if !system_prompt.is_empty() {
+            messages.push(Message { role: "system".to_string(), content: system_prompt.to_string() });
+        }
+        let body = serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        });
+        // https://platform.openai.com/docs/api-reference/making-requests
+        //
+        // Request JSON
+        // {
+        //   "model": "gpt-3.5-turbo",
+        //   "messages": [{"role": "user", "content": "Say this is a test!"}],
+        //   "temperature": 0.7
+        // }
+        //
+        // Response JSON
+        // {
+        //     "id": "chatcmpl-abc123",
+        //     "object": "chat.completion",
+        //     "created": 1677858242,
+        //     "model": "gpt-3.5-turbo-0613",
+        //     "usage": {
+        //         "prompt_tokens": 13,
+        //         "completion_tokens": 7,
+        //         "total_tokens": 20
+        //     },
+        //     "choices": [
+        //         {
+        //             "message": {
+        //                 "role": "assistant",
+        //                 "content": "\n\nThis is a test!"
+        //             },
+        //             "logprobs": null,
+        //             "finish_reason": "stop",
+        //             "index": 0
+        //         }
+        //     ]
+        // }
+        let response = self
+            .client
+            .post("https://api.openai.com/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
             .send()
             .await?;
 
-        self.input_tokens_tally += response.usage.input_tokens;
-        self.output_tokens_tally += response.usage.output_tokens;
+        let resp_status = response.status();
+        let resp_text = response.text().await.unwrap_or("".into());
+        if resp_status.is_client_error() {
+            return Err(ApiError::ClientError(format!("Status: {} - Error: {}", resp_status, resp_text)));
+        } else if resp_status.is_server_error() {
+            return Err(ApiError::ServerError(format!("Status: {} - Error: {}", resp_status, resp_text)));
+        }
 
-        let content = response.content.into_iter()
-            .map(|block| block.text)
-            .collect::<String>();
+        let response_message: ResponseMessage = serde_json::from_str(&resp_text)?;
+        Ok(response_message)
+    }
 
-        self.messages.push(Message {
-            role: response.role,
-            content: content.clone(),
-        });
+    fn client_type(&self) -> ClientLlm {
+        ClientLlm::OpenAI
+    }
+}
 
-        Ok(ChatResponse {
-            session: self,
-            last_response: content,
-        })
+/// The main client for interacting with LLM APIs.
+///
+/// The `LlmClient` struct provides a convenient way to make requests to LLM APIs using the
+/// `RequestBuilder`. It internally uses the appropriate client implementation based on the
+/// selected `ClientLlm` enum variant.
+pub struct LlmClient {
+    client: Box<dyn LlmClientTrait + Send + Sync>,
+}
+
+impl LlmClient {
+    /// Creates a new `LlmClient` instance with the specified `ClientLlm` variant and API key.
+    pub fn new(client_type: ClientLlm, api_key: String) -> Self {
+        let client: Box<dyn LlmClientTrait + Send + Sync> = match client_type {
+            ClientLlm::Anthropic => Box::new(AnthropicClient::new(api_key)),
+            ClientLlm::OpenAI => Box::new(OpenAIClient::new(api_key)),
+        };
+        LlmClient { client }
+    }
+
+    /// Creates a new `RequestBuilder` for constructing a request to the LLM API.
+    pub fn request(&mut self) -> RequestBuilder {
+        RequestBuilder::new(self.client.as_ref())
     }
 }
