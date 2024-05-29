@@ -57,7 +57,7 @@ pub struct CommonUsage {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct AnthropicResponse {
+pub struct AnthropicResponse {
     pub id: String,
     pub role: String,
     pub content: Vec<AnthropicContentBlock>,
@@ -68,7 +68,7 @@ pub(crate) struct AnthropicResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct OpenAIResponse {
+pub struct OpenAIResponse {
     pub id: String,
     pub object: String,
     pub created: i64,
@@ -115,8 +115,16 @@ impl ResponseMessage {
     /// # Examples
     ///
     /// ```
-    /// # use llm_bridge::models::ResponseMessage;
-    /// # let response = ResponseMessage::Anthropic(/* ... */);
+    /// # use llm_bridge::models::{AnthropicResponse, ResponseMessage};
+    /// # let response = ResponseMessage::Anthropic(AnthropicResponse {
+    ///     id: "".to_string(),
+    ///     role: "".to_string(),
+    ///     content: vec![],
+    ///     model: "".to_string(),
+    ///     stop_reason: "".to_string(),
+    ///     stop_sequence: None,
+    ///     usage: Default::default(),}
+    /// );
     /// let first_message = response.first_message();
     /// println!("First message: {}", first_message);
     /// ```
@@ -144,8 +152,16 @@ impl ResponseMessage {
     /// # Examples
     ///
     /// ```
-    /// # use llm_bridge::models::ResponseMessage;
-    /// # let response = ResponseMessage::Anthropic(AnthropicResponse { });
+    /// # use llm_bridge::models::{AnthropicResponse, ResponseMessage};
+    /// # let response = ResponseMessage::Anthropic(AnthropicResponse {
+    ///     id: "".to_string(),
+    ///     role: "".to_string(),
+    ///     content: vec![],
+    ///     model: "".to_string(),
+    ///     stop_reason: "".to_string(),
+    ///     stop_sequence: None,
+    ///     usage: Default::default(),}
+    /// );
     /// let role = response.role();
     /// println!("Role: {}", role);
     /// ```
@@ -167,8 +183,16 @@ impl ResponseMessage {
     /// # Examples
     ///
     /// ```
-    /// # use llm_bridge::models::ResponseMessage;
-    /// # let response = ResponseMessage::Anthropic(/* ... */);
+    /// # use llm_bridge::models::{AnthropicResponse, ResponseMessage};
+    /// # let response = ResponseMessage::Anthropic(AnthropicResponse {
+    ///     id: "".to_string(),
+    ///     role: "".to_string(),
+    ///     content: vec![],
+    ///     model: "".to_string(),
+    ///     stop_reason: "".to_string(),
+    ///     stop_sequence: None,
+    ///     usage: Default::default(),}
+    /// );
     /// let model = response.model();
     /// println!("Model: {}", model);
     /// ```
@@ -184,8 +208,16 @@ impl ResponseMessage {
     /// # Examples
     ///
     /// ```
-    /// # use llm_bridge::models::ResponseMessage;
-    /// # let response = ResponseMessage::Anthropic(/* ... */);
+    /// # use llm_bridge::models::{AnthropicResponse, ResponseMessage};
+    /// # let response = ResponseMessage::Anthropic(AnthropicResponse {
+    ///     id: "".to_string(),
+    ///     role: "".to_string(),
+    ///     content: vec![],
+    ///     model: "".to_string(),
+    ///     stop_reason: "".to_string(),
+    ///     stop_sequence: None,
+    ///     usage: Default::default(),}
+    /// );
     /// let stop_reason = response.stop_reason();
     /// println!("Stop reason: {}", stop_reason);
     /// ```
@@ -207,8 +239,16 @@ impl ResponseMessage {
     /// # Examples
     ///
     /// ```
-    /// # use llm_bridge::models::ResponseMessage;
-    /// # let response = ResponseMessage::Anthropic(/* ... */);
+    /// # use llm_bridge::models::{AnthropicResponse, ResponseMessage};
+    /// # let response = ResponseMessage::Anthropic(AnthropicResponse {
+    ///     id: "".to_string(),
+    ///     role: "".to_string(),
+    ///     content: vec![],
+    ///     model: "".to_string(),
+    ///     stop_reason: "".to_string(),
+    ///     stop_sequence: None,
+    ///     usage: Default::default(),}
+    /// );
     /// let usage = response.usage();
     /// println!("Input tokens: {}", usage.input_tokens);
     /// println!("Output tokens: {}", usage.output_tokens);
