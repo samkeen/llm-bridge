@@ -28,7 +28,7 @@ pub enum ClientLlm {
 
 /// Trait defining the common interface for LLM clients.
 #[async_trait::async_trait]
-pub trait LlmClientTrait {
+pub trait LlmClientTrait: Send + Sync {
     /// Sends a message to the LLM API and returns the response.
     ///
     /// # Arguments
@@ -60,7 +60,7 @@ pub trait LlmClientTrait {
 /// messages, max tokens, temperature, and system prompt. The `send` method sends the request
 /// to the API and returns the response.
 pub struct RequestBuilder<'a> {
-    client: &'a dyn LlmClientTrait,
+    client: &'a (dyn LlmClientTrait + Send + Sync),
     model: Option<String>,
     messages: Option<Vec<Message>>,
     max_tokens: Option<u32>,
@@ -69,7 +69,7 @@ pub struct RequestBuilder<'a> {
 }
 
 impl<'a> RequestBuilder<'a> {
-    pub fn new(client: &'a dyn LlmClientTrait) -> Self {
+    pub fn new(client: &'a (dyn LlmClientTrait + Send + Sync)) -> Self {
         RequestBuilder {
             client,
             model: None,
