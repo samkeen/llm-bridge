@@ -4,7 +4,6 @@ mod tests {
     use llm_bridge::client::{ClientLlm, LlmClient};
     use llm_bridge::error::ApiError;
     use pretty_assertions::{assert_eq};
-    use llm_bridge::models::ResponseMessage;
 
 
     #[tokio::test]
@@ -89,6 +88,8 @@ mod tests {
 
     use std::sync::{Arc, Mutex};
     use std::thread;
+    use llm_bridge::response::ResponseMessage;
+    use llm_bridge::tool::Tool;
 
     #[tokio::test]
     async fn test_llm_client_sync() {
@@ -126,5 +127,85 @@ mod tests {
             handle.join().expect("Thread panicked");
         }
         // The test passes if all threads completed successfully without any Sync-related issues
+    }
+
+    #[tokio::test]
+    async fn test_tool_use_anthropic() {
+        
+        dotenv().ok();
+        let api_key = std::env::var("ANTHROPIC_API_KEY")
+            .expect("ANTHROPIC_API_KEY must be set.");
+        let client_type = ClientLlm::Anthropic;
+        let mut client = LlmClient::new(client_type, api_key);
+
+        let tool = Tool::builder()
+            .name("get_weather")
+            .description("Get the current weather in a given location")
+            .add_parameter("location", "string", "The city and state, e.g. San Francisco, CA", true)
+            .add_enum_parameter("unit", "The unit of temperature, either 'celsius' or 'fahrenheit'", false, vec!["celsius".to_string(), "fahrenheit".to_string()])
+            .build()
+            .expect("Failed to build tool");
+
+        let response = client
+            .request()
+            .add_tool(tool)
+            .model("claude-3-haiku-20240307")
+            .user_message("What is the current weather in San Francisco, California")
+            .max_tokens(100)
+            .temperature(1.0)
+            .system_prompt("You are a weather assistant.")
+            .send()
+            .await
+            .expect("Failed to send message");
+
+        assert_eq!(response.stop_reason(), "tool_use");
+
+        if let Some(tools) = response.tools() {
+            assert_eq!(tools.len(), 1);
+            assert_eq!(tools[0].name, "get_weather");
+            assert_eq!(tools[0].input["location"], "San Francisco, CA");
+        } else {
+            panic!("Expected tool use, but no tools were returned");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tool_use_gpt() {
+
+        dotenv().ok();
+        let api_key = std::env::var("OPENAI_API_KEY")
+            .expect("OPENAI_API_KEY must be set.");
+        let client_type = ClientLlm::OpenAI;
+        let mut client = LlmClient::new(client_type, api_key);
+
+        let tool = Tool::builder()
+            .name("get_weather")
+            .description("Get the current weather in a given location")
+            .add_parameter("location", "string", "The city and state, e.g. San Francisco, CA", true)
+            .add_enum_parameter("unit", "The unit of temperature, either 'celsius' or 'fahrenheit'", false, vec!["celsius".to_string(), "fahrenheit".to_string()])
+            .build()
+            .expect("Failed to build tool");
+
+        let response = client
+            .request()
+            .add_tool(tool)
+            .model("gpt-4o")
+            .user_message("What is the current weather in San Francisco, California")
+            .max_tokens(100)
+            .temperature(1.0)
+            .system_prompt("You are a weather assistant.")
+            .send()
+            .await
+            .expect("Failed to send message");
+
+        assert_eq!(response.stop_reason(), "tool_calls");
+
+        if let Some(tools) = response.tools() {
+            assert_eq!(tools.len(), 1);
+            assert_eq!(tools[0].name, "get_weather");
+            assert_eq!(tools[0].input["location"], "San Francisco, CA");
+        } else {
+            panic!("Expected tool use, but no tools were returned");
+        }
     }
 }
