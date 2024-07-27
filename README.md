@@ -42,7 +42,7 @@ use llm_bridge::error::ApiError;
 
 #[tokio::main]
 async fn main() {
-    let api_key = "WWWWWWWWWW".to_string();
+    let api_key = "YOUR API KEY".to_string();
     let client_type = ClientLlm::OpenAI;
     let mut client = LlmClient::new(client_type, api_key);
 
@@ -69,7 +69,7 @@ use llm_bridge::error::ApiError;
 
 #[tokio::main]
 async fn main() {
-    let api_key = "WWWWWWWWWW".to_string();
+    let api_key = "YOUR API KEY".to_string();
     let client_type = ClientLlm::Anthropic;
     let mut client = LlmClient::new(client_type, api_key);
 
@@ -93,10 +93,82 @@ async fn main() {
 }
 ```
 
-## Documentation
+### Tool Use (Function Calling)
 
-For detailed documentation and more examples, please refer to
-the [API documentation](https://docs.rs/llm-bridge/latest/llm_bridge/).
+LLM Bridge now supports tool use (also known as function calling in OpenAI's terminology). This feature allows you to define tools or functions that the LLM can use to perform specific tasks.
+
+#### Creating a Tool
+
+To create a tool, use the `Tool` builder:
+
+```rust
+#[tokio::main]
+async fn main() {
+    use llm_bridge::tool::Tool;
+
+    let weather_tool = Tool::builder()
+        .name("get_weather")
+        .description("Get the current weather in a given location")
+        .add_parameter("location", "string", "The city and state, e.g. San Francisco, CA", true)
+        .add_enum_parameter("unit", "The unit of temperature", false, vec!["celsius".to_string(), "fahrenheit".to_string()])
+        .build()
+        .expect("Failed to build tool");
+}
+```
+
+#### Using a Tool with OpenAI
+
+Here's an example of how to use a tool with OpenAI's GPT model
+Note: If using an Anthropic LLM, the function definition and the handling of the response remains the same.
+```rust
+use llm_bridge::client::{ClientLlm, LlmClient};
+use llm_bridge::tool::Tool;
+
+#[tokio::main]
+async fn main() {
+    let api_key = "your_openai_api_key".to_string();
+    let client_type = ClientLlm::OpenAI;
+    let mut client = LlmClient::new(client_type, api_key);
+
+    let weather_tool = Tool::builder()
+        .name("get_weather")
+        .description("Get the current weather in a given location")
+        .add_parameter("location", "string", "The city and state, e.g. San Francisco, CA", true)
+        .add_enum_parameter("unit", "The unit of temperature", false, vec!["celsius".to_string(), "fahrenheit".to_string()])
+        .build()
+        .expect("Failed to build tool");
+
+    let response = client
+        .request()
+        .add_tool(weather_tool)
+        .model("gpt-4o")
+        .user_message("What's the weather like in New York?")
+        .system_prompt("You are a helpful weather assistant.")
+        .send()
+        .await
+        .expect("Failed to send message");
+
+    if let Some(tools) = response.tools() {
+        for tool in tools {
+            println!("Tool used: {}", tool.name);
+            println!("Tool input: {:?}", tool.input);
+        }
+    } else {
+        println!("No tools were used in this response");
+    }
+
+    println!("Response: {}", response.first_message());
+}
+```
+
+
+
+
+
+
+In this example, we define a `get_weather` tool and add it to the request. The LLM may choose to use this tool 
+if it determines that it needs weather information to answer the user's question.
+
 
 ## Contributing
 

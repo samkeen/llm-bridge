@@ -9,8 +9,11 @@
 
 use log::{debug, error};
 use crate::error::ApiError;
-use crate::models::{Message, RequestBody, ResponseMessage};
+use crate::request::{Message, RequestBody};
 use reqwest::Client;
+use serde_json::{json, Number};
+use crate::response::{OpenAIResponse, ResponseMessage};
+use crate::tool::Tool;
 
 const API_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
 const API_VERSION: &str = "2023-06-01";
@@ -18,39 +21,18 @@ const DEFAULT_ANTHROPIC_MODEL: &str = "claude-3-haiku-20240307";
 
 const DEFAULT_OPENAI_MODEL: &str = "gpt-4o";
 const DEFAULT_MAX_TOKENS: u32 = 100;
-const DEFAULT_TEMP: f32 = 0.0;
+const DEFAULT_TEMP: f64 = 0.0;
 
+#[derive(Debug, Clone)]
 /// Supported LLMs
 pub enum ClientLlm {
     Anthropic,
     OpenAI,
 }
 
-/// Trait defining the common interface for LLM clients.
 #[async_trait::async_trait]
 pub trait LlmClientTrait: Send + Sync {
-    /// Sends a message to the LLM API and returns the response.
-    ///
-    /// # Arguments
-    ///
-    /// * `model` - The name of the model to use for generating the response.
-    /// * `messages` - The list of messages in the conversation.
-    /// * `max_tokens` - The maximum number of tokens to generate in the response.
-    /// * `temperature` - The temperature value to control the randomness of the generated response.
-    /// * `system_prompt` - The system prompt to provide context and instructions to the model.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the `ResponseMessage` on success, or an `ApiError` on failure.
-    async fn send_message(
-        &self,
-        model: &str,
-        messages: Vec<Message>,
-        max_tokens: u32,
-        temperature: f32,
-        system_prompt: &str,
-    ) -> Result<ResponseMessage, ApiError>;
-
+    async fn send_message(&self, request_body: serde_json::Value) -> Result<ResponseMessage, ApiError>;
     fn client_type(&self) -> ClientLlm;
 }
 
@@ -64,8 +46,9 @@ pub struct RequestBuilder<'a> {
     model: Option<String>,
     messages: Option<Vec<Message>>,
     max_tokens: Option<u32>,
-    temperature: Option<f32>,
+    temperature: Option<f64>,
     system_prompt: Option<String>,
+    tools: Option<Vec<Tool>>
 }
 
 impl<'a> RequestBuilder<'a> {
@@ -77,7 +60,18 @@ impl<'a> RequestBuilder<'a> {
             max_tokens: None,
             temperature: None,
             system_prompt: None,
+            tools: None,
         }
+    }
+
+    pub fn add_tool(mut self, tool: Tool) -> Self {
+        if let Some(mut tools) = self.tools {
+            tools.push(tool);
+            self.tools = Some(tools);
+        } else {
+            self.tools = Some(vec![tool]);
+        }
+        self
     }
 
     /// Sets the model to use for generating the response.
@@ -110,7 +104,7 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Sets the temperature value to control the randomness of the generated response.
-    pub fn temperature(mut self, temperature: f32) -> Self {
+    pub fn temperature(mut self, temperature: f64) -> Self {
         self.temperature = Some(temperature);
         self
     }
@@ -121,53 +115,71 @@ impl<'a> RequestBuilder<'a> {
         self
     }
 
-    /// Sends the request to the LLM API and returns the response.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use llm_bridge::client::{LlmClient, ClientLlm};
-    ///
-    /// #[tokio::main]
-    /// async fn main() {
-    ///     let api_key = "your_api_key".to_string();
-    ///     let client_type = ClientLlm::Anthropic;
-    ///     let mut client = LlmClient::new(client_type, api_key);
-    ///
-    ///     let response = client
-    ///         .request()
-    ///         .model("claude-3-haiku-20240307")
-    ///         .user_message("Hello, Claude!")
-    ///         .max_tokens(100)
-    ///         .temperature(1.0)
-    ///         .system_prompt("You are a haiku assistant.")
-    ///         .send()
-    ///         .await
-    ///         .expect("Failed to send message");
-    ///
-    ///     println!("Response: {}", response.first_message());
-    /// }
-    /// ```
-    pub async fn send(self) -> Result<ResponseMessage, ApiError> {
-        let model = self.model.unwrap_or_else(|| {
+    pub fn render_request(&self) -> Result<serde_json::Value, ApiError> {
+        let model = self.model.clone().unwrap_or_else(|| {
             match self.client.client_type() {
                 ClientLlm::Anthropic => DEFAULT_ANTHROPIC_MODEL.to_string(),
                 ClientLlm::OpenAI => DEFAULT_OPENAI_MODEL.to_string(),
                 // Add more cases for other LLM APIs as needed
             }
         });
-        let messages = self.messages.ok_or(ApiError::MissingMessages)?;
+        let messages = self.messages.clone().ok_or(ApiError::MissingMessages)?;
         let max_tokens = self.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
         let temperature = self.temperature.unwrap_or(DEFAULT_TEMP);
-        let system_prompt = self.system_prompt.unwrap_or_default();
+        let temperature_number = Number::from_f64(temperature)
+            .ok_or_else(|| ApiError::InvalidUsage(format!("Invalid temperature value: {}", temperature)))?;
+        let system_prompt = self.system_prompt.clone().unwrap_or_default();
 
-        self.client.send_message(
-            &model,
-            messages,
-            max_tokens,
-            temperature,
-            &system_prompt,
-        ).await
+        match self.client.client_type() {
+            ClientLlm::Anthropic => {
+                let mut request = json!({
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature_number,
+                    "system": system_prompt,
+                });
+
+                if let Some(tools) = &self.tools {
+                    let anthropic_tools: Vec<serde_json::Value> = tools.iter()
+                        .map(|tool| tool.to_anthropic_format())
+                        .collect();
+                    request["tools"] = json!(anthropic_tools);
+                }
+
+                Ok(request)
+            },
+            ClientLlm::OpenAI => {
+                let mut request = json!({
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature_number,
+                });
+
+                if !system_prompt.is_empty() {
+                    request["messages"].as_array_mut().unwrap().push(json!({
+                        "role": "system",
+                        "content": system_prompt
+                    }));
+                }
+
+                if let Some(tools) = &self.tools {
+                    let openai_tools: Vec<serde_json::Value> = tools.iter()
+                        .map(|tool| tool.to_openai_format())
+                        .collect();
+                    request["tools"] = json!(openai_tools);
+                }
+
+                Ok(request)
+            },
+        }
+    }
+
+
+    pub async fn send(self) -> Result<ResponseMessage, ApiError> {
+        let request_body = self.render_request()?;
+        self.client.send_message(request_body).await
     }
 }
 
@@ -186,58 +198,13 @@ impl AnthropicClient {
 
 #[async_trait::async_trait]
 impl LlmClientTrait for AnthropicClient {
-    async fn send_message(
-        &self,
-        model: &str,
-        messages: Vec<Message>,
-        max_tokens: u32,
-        temperature: f32,
-        system_prompt: &str,
-    ) -> Result<ResponseMessage, ApiError> {
-        let body = RequestBody {
-            model: model.to_string(),
-            messages,
-            max_tokens,
-            temperature,
-            system: system_prompt.to_string(),
-        };
-        // https://docs.anthropic.com/en/api/messages
-        //
-        // Request JSON
-        // {
-        //     "model": "claude-3-opus-20240229",
-        //     "max_tokens": 1024,
-        //     "messages": [
-        //         {"role": "user", "content": "Hello, world"}
-        //     ]
-        // }
-        //
-        // Response JSON
-        // {
-        //   "content": [
-        //     {
-        //       "text": "Hi! My name is Claude.",
-        //       "type": "text"
-        //     }
-        //   ],
-        //   "id": "msg_013Zva2CMHLNnXjNJJKqJ2EF",
-        //   "model": "claude-3-opus-20240229",
-        //   "role": "assistant",
-        //   "stop_reason": "end_turn",
-        //   "stop_sequence": null,
-        //   "type": "message",
-        //   "usage": {
-        //     "input_tokens": 10,
-        //     "output_tokens": 25
-        //   }
-        // }
-        let response = self
-            .client
+    async fn send_message(&self, request_body: serde_json::Value) -> Result<ResponseMessage, ApiError> {
+        let response = self.client
             .post(API_ENDPOINT)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", API_VERSION)
             .header("content-type", "application/json")
-            .json(&body)
+            .json(&request_body)
             .send()
             .await?;
         let resp_status = response.status();
@@ -277,62 +244,12 @@ impl OpenAIClient {
 
 #[async_trait::async_trait]
 impl LlmClientTrait for OpenAIClient {
-    async fn send_message(
-        &self,
-        model: &str,
-        mut messages: Vec<Message>,
-        max_tokens: u32,
-        temperature: f32,
-        system_prompt: &str,
-    ) -> Result<ResponseMessage, ApiError> {
-        // OpenAI places the System prompt in the messages list
-        if !system_prompt.is_empty() {
-            messages.push(Message { role: "system".to_string(), content: system_prompt.to_string() });
-        }
-        let body = serde_json::json!({
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        });
-        // https://platform.openai.com/docs/api-reference/making-requests
-        //
-        // Request JSON
-        // {
-        //   "model": "gpt-3.5-turbo",
-        //   "messages": [{"role": "user", "content": "Say this is a test!"}],
-        //   "temperature": 0.7
-        // }
-        //
-        // Response JSON
-        // {
-        //     "id": "chatcmpl-abc123",
-        //     "object": "chat.completion",
-        //     "created": 1677858242,
-        //     "model": "gpt-3.5-turbo-0613",
-        //     "usage": {
-        //         "prompt_tokens": 13,
-        //         "completion_tokens": 7,
-        //         "total_tokens": 20
-        //     },
-        //     "choices": [
-        //         {
-        //             "message": {
-        //                 "role": "assistant",
-        //                 "content": "\n\nThis is a test!"
-        //             },
-        //             "logprobs": null,
-        //             "finish_reason": "stop",
-        //             "index": 0
-        //         }
-        //     ]
-        // }
-        let response = self
-            .client
+    async fn send_message(&self, request_body: serde_json::Value) -> Result<ResponseMessage, ApiError> {
+        let response = self.client
             .post("https://api.openai.com/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
-            .json(&body)
+            .json(&request_body)
             .send()
             .await?;
 
@@ -344,8 +261,8 @@ impl LlmClientTrait for OpenAIClient {
             return Err(ApiError::ServerError(format!("Status: {} - Error: {}", resp_status, resp_text)));
         }
 
-        let response_message: ResponseMessage = serde_json::from_str(&resp_text)?;
-        Ok(response_message)
+        let openai_response: OpenAIResponse = serde_json::from_str(&resp_text)?;
+        Ok(ResponseMessage::OpenAI(openai_response))
     }
 
     fn client_type(&self) -> ClientLlm {
@@ -375,5 +292,283 @@ impl LlmClient {
     /// Creates a new `RequestBuilder` for constructing a request to the LLM API.
     pub fn request(&mut self) -> RequestBuilder {
         RequestBuilder::new(self.client.as_ref())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dotenv::dotenv;
+    use super::*;
+    use crate::tool::Tool;
+
+    struct MockClient {
+        client_type: ClientLlm,
+    }
+
+    #[async_trait::async_trait]
+    impl LlmClientTrait for MockClient {
+        async fn send_message(&self, _request_body: serde_json::Value) -> Result<ResponseMessage, ApiError> {
+            unimplemented!()
+        }
+
+        fn client_type(&self) -> ClientLlm {
+            self.client_type.clone()
+        }
+    }
+
+    #[test]
+    fn test_anthropic_default_request() {
+        let client = MockClient { client_type: ClientLlm::Anthropic };
+        let builder = RequestBuilder::new(&client)
+            .user_message("Hello, Claude!");
+
+        let request = builder.render_request().unwrap();
+
+        assert_eq!(request["model"], DEFAULT_ANTHROPIC_MODEL);
+        assert_eq!(request["max_tokens"], DEFAULT_MAX_TOKENS);
+        assert_eq!(request["temperature"], DEFAULT_TEMP);
+        assert_eq!(request["system"], "");
+        assert_eq!(request["messages"][0]["role"], "user");
+        assert_eq!(request["messages"][0]["content"], "Hello, Claude!");
+    }
+
+    #[test]
+    fn test_openai_default_request() {
+        let client = MockClient { client_type: ClientLlm::OpenAI };
+        let builder = RequestBuilder::new(&client)
+            .user_message("Hello, GPT!");
+
+        let request = builder.render_request().unwrap();
+
+        assert_eq!(request["model"], DEFAULT_OPENAI_MODEL);
+        assert_eq!(request["max_tokens"], DEFAULT_MAX_TOKENS);
+        assert_eq!(request["temperature"], DEFAULT_TEMP);
+        assert_eq!(request["messages"][0]["role"], "user");
+        assert_eq!(request["messages"][0]["content"], "Hello, GPT!");
+    }
+
+    #[test]
+    fn test_custom_model_and_parameters() {
+        let client = MockClient { client_type: ClientLlm::Anthropic };
+        let builder = RequestBuilder::new(&client)
+            .model("custom-model")
+            .max_tokens(500)
+            .temperature(0.8)
+            .system_prompt("You are a helpful assistant.")
+            .user_message("Tell me a joke.");
+
+        let request = builder.render_request().unwrap();
+
+        assert_eq!(request["model"], "custom-model");
+        assert_eq!(request["max_tokens"], 500);
+
+        // Check for exact temperature value
+        assert_eq!(request["temperature"], json!(0.8));
+
+        assert_eq!(request["system"], "You are a helpful assistant.");
+        assert_eq!(request["messages"][0]["content"], "Tell me a joke.");
+    }
+
+    #[test]
+    fn test_multiple_messages() {
+        let client = MockClient { client_type: ClientLlm::OpenAI };
+        let builder = RequestBuilder::new(&client)
+            .user_message("Hello!")
+            .user_message("How are you?");
+
+        let request = builder.render_request().unwrap();
+
+        assert_eq!(request["messages"].as_array().unwrap().len(), 2);
+        assert_eq!(request["messages"][0]["content"], "Hello!");
+        assert_eq!(request["messages"][1]["content"], "How are you?");
+    }
+
+    #[test]
+    fn test_missing_messages() {
+        let client = MockClient { client_type: ClientLlm::Anthropic };
+        let builder = RequestBuilder::new(&client);
+
+        let result = builder.render_request();
+
+        assert!(matches!(result, Err(ApiError::MissingMessages)));
+    }
+
+    #[test]
+    fn test_openai_system_prompt() {
+        let client = MockClient { client_type: ClientLlm::OpenAI };
+        let builder = RequestBuilder::new(&client)
+            .system_prompt("You are a helpful assistant.")
+            .user_message("Hello!");
+
+        let request = builder.render_request().unwrap();
+
+        assert_eq!(request["messages"].as_array().unwrap().len(), 2);
+        assert_eq!(request["messages"][1]["role"], "system");
+        assert_eq!(request["messages"][1]["content"], "You are a helpful assistant.");
+        assert_eq!(request["messages"][0]["role"], "user");
+        assert_eq!(request["messages"][0]["content"], "Hello!");
+    }
+
+    #[test]
+    fn test_default_temperature() {
+        let client = MockClient { client_type: ClientLlm::Anthropic };
+        let builder = RequestBuilder::new(&client)
+            .user_message("Test message");
+
+        let request = builder.render_request().unwrap();
+
+        assert_eq!(request["temperature"], json!(DEFAULT_TEMP));
+    }
+
+    #[test]
+    fn test_custom_temperature() {
+        let client = MockClient { client_type: ClientLlm::Anthropic };
+        let custom_temp = 0.7;
+        let builder = RequestBuilder::new(&client)
+            .temperature(custom_temp)
+            .user_message("Test message");
+
+        let request = builder.render_request().unwrap();
+
+        assert_eq!(request["temperature"], json!(custom_temp));
+    }
+
+    #[test]
+    fn test_temperature_precision() {
+        let client = MockClient { client_type: ClientLlm::Anthropic };
+        let precise_temp = 0.12345;
+        let builder = RequestBuilder::new(&client)
+            .temperature(precise_temp)
+            .user_message("Test message");
+
+        let request = builder.render_request().unwrap();
+
+        assert_eq!(request["temperature"], json!(precise_temp));
+    }
+
+    #[test]
+    fn test_invalid_temperature() {
+        use std::f64::{INFINITY, NEG_INFINITY};
+
+        let client = MockClient { client_type: ClientLlm::Anthropic };
+
+        for &invalid_temp in &[INFINITY, NEG_INFINITY, f64::NAN] {
+            let builder = RequestBuilder::new(&client)
+                .temperature(invalid_temp)
+                .user_message("Test message");
+
+            let result = builder.render_request();
+            assert!(matches!(result, Err(ApiError::InvalidUsage(_))));
+        }
+    }
+    
+    fn get_weather_tool() -> Tool {
+        Tool::builder()
+            .name("get_weather")
+            .description("Get the current weather in a given location")
+            .add_parameter("location", "string", "The city and state, e.g. San Francisco, CA", true)
+            .add_enum_parameter("unit", "The unit of temperature, either 'celsius' or 'fahrenheit'", false, vec!["celsius".to_string(), "fahrenheit".to_string()])
+            .build()
+            .expect("Failed to build tool")
+    }
+
+    #[test]
+    fn test_tool_use_anthropic() {
+        dotenv().ok();
+        let api_key = std::env::var("ANTHROPIC_API_KEY")
+            .expect("ANTHROPIC_API_KEY must be set.");
+        let client_type = ClientLlm::Anthropic;
+        let mut client = LlmClient::new(client_type, api_key);
+
+        let tool = get_weather_tool();
+
+        let request = client
+            .request()
+            .add_tool(tool)
+            .model("claude-3-haiku-20240307")
+            .user_message("What is the current weather in San Francisco, California")
+            .max_tokens(100)
+            .temperature(1.0)
+            .system_prompt("You are a haiku assistant.")
+            .render_request()
+            .expect("Failed to render request");
+
+        // Check if the tools field is present and correctly formatted
+        assert!(request.get("tools").is_some(), "Tools field is missing");
+        let tools = request["tools"].as_array().expect("Tools should be an array");
+        assert_eq!(tools.len(), 1, "There should be one tool");
+
+        let tool = &tools[0];
+        assert_eq!(tool["name"], "get_weather", "Tool name should be 'get_weather'");
+        assert!(tool["input_schema"].is_object(), "Tool should have an input schema");
+
+        let input_schema = &tool["input_schema"];
+        assert_eq!(input_schema["type"], "object", "Input schema type should be 'object'");
+
+        let properties = input_schema["properties"].as_object().expect("Properties should be an object");
+        assert!(properties.contains_key("location"), "Location parameter should be present");
+        assert!(properties.contains_key("unit"), "Unit parameter should be present");
+
+    }
+
+    #[test]
+    fn test_function_calling_openai() {
+        dotenv().ok();
+        let api_key = std::env::var("OPENAI_API_KEY")
+            .expect("OPENAI_API_KEY must be set.");
+        let client_type = ClientLlm::OpenAI;
+        let mut client = LlmClient::new(client_type, api_key);
+
+        let tool = get_weather_tool();
+
+        let request = client
+            .request()
+            .add_tool(tool)
+            .model("gpt-4o")
+            .user_message("What is the current weather in San Francisco, California")
+            .max_tokens(100)
+            .temperature(1.0)
+            .system_prompt("You are a weather assistant.")
+            .render_request()
+            .expect("Failed to render request");
+
+        // Check if the functions field is present and correctly formatted
+        assert!(request.get("tools").is_some(), "Tools field is missing");
+        let tools = request["tools"].as_array().expect("Tools should be an array");
+        assert_eq!(tools.len(), 1, "There should be one tool");
+
+        let function = &tools[0];
+        assert_eq!(function["type"], "function", "Tool type should be 'function'");
+
+        let function_details = &function["function"];
+        assert_eq!(function_details["name"], "get_weather", "Function name should be 'get_weather'");
+        assert_eq!(function_details["description"], "Get the current weather in a given location", "Function description should match");
+
+        let parameters = &function_details["parameters"];
+        assert_eq!(parameters["type"], "object", "Parameters type should be 'object'");
+
+        let properties = parameters["properties"].as_object().expect("Properties should be an object");
+        assert!(properties.contains_key("location"), "Location parameter should be present");
+        assert!(properties.contains_key("unit"), "Unit parameter should be present");
+
+        let location = &properties["location"];
+        assert_eq!(location["type"], "string", "Location type should be 'string'");
+
+        let unit = &properties["unit"];
+        assert_eq!(unit["type"], "string", "Unit type should be 'string'");
+        assert!(unit.get("enum").is_some(), "Unit should have enum values");
+
+        let required = parameters["required"].as_array().expect("Required should be an array");
+        assert!(required.contains(&json!("location")), "Location should be a required parameter");
+
+        // Check other request parameters
+        assert_eq!(request["model"], "gpt-4o", "Model should be set correctly");
+        assert_eq!(request["max_tokens"], 100, "Max tokens should be set correctly");
+        assert_eq!(request["temperature"], 1.0, "Temperature should be set correctly");
+
+        // Check that the system message is included in the messages array
+        let messages = request["messages"].as_array().expect("Messages should be an array");
+        assert!(messages.iter().any(|msg| msg["role"] == "system" && msg["content"] == "You are a weather assistant."),
+                "System message should be included in the messages array");
     }
 }
