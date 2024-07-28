@@ -1,6 +1,6 @@
 # LLM Bridge
 
-## LLM API Adapter SDK for Rust
+## Rust SDK adapter for LLM APIs
 
 This is a Rust SDK for interacting with various Large Language Model (LLM) APIs, starting with the Anthropic API. It
 allows you to
